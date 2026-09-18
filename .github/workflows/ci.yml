@@ -34,6 +34,13 @@ jobs:
               tail -n 200 pytest.log
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
+            python - <<'PY'
+          from pathlib import Path
+
+          text = Path("pytest.log").read_text(encoding="utf-8", errors="replace")[-12000:]
+          escaped = text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+          print(f"::error title=Pytest failure::{escaped}")
+          PY
           fi
           exit "$status"
       - name: Protocol audit
