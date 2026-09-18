@@ -1,0 +1,18 @@
+base_config: configs/smoke.yaml
+output_root: runs/smoke
+seeds: [11]
+core_variants:
+  - pidmppo
+  - lstm_ppo
+  - gru_ppo
+  - lstm_auxiliary
+  - lstm_dual_value
+  - matched_lstm
+  - matched_gru
+  - without_d
+  - without_attention
+  - without_auxiliary
+  - l_loss_only
+  - g_loss_only
+  - single_critic
+sensitivity: []

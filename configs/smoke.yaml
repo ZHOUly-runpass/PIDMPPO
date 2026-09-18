@@ -1,0 +1,30 @@
+# Training-path validation only. Model and environment defaults match paper.yaml;
+# rollout/update cadence is reduced so every variant completes four updates on CPU.
+seed: 42
+device: auto
+total_timesteps: 4096
+
+ppo:
+  learning_rate: 0.00025
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_coef: 0.2
+  update_epochs: 1
+  rollout_steps: 1024
+  minibatch_size: 256
+  sequence_length: 128
+  value_coef: 0.5
+  entropy_coef: 0.01
+  auxiliary_coef: 0.1
+  l_weight: 1.0
+  g_weight: 0.5
+  failure_tail_steps: 20
+  max_grad_norm: 0.5
+  normalize_advantage: true
+  normalize_g_target: true
+
+logging:
+  log_interval: 1024
+  save_interval: 50000
+  record_diagnostics: false
+  write_csv: true

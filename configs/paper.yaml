@@ -1,0 +1,88 @@
+seed: 42
+device: auto
+total_timesteps: 1500000
+env:
+  backend: grid
+  map_name: map1
+  map_file: null
+  lidar_beams: 64
+  lidar_min_range: 0.12
+  lidar_max_range: 3.5
+  action_history: 9
+  goal_radius: 0.20
+  collision_distance: 0.13
+  # TurtleBot3 Burger footprint approximation; the manuscript only specifies the LiDAR threshold.
+  robot_radius: 0.105
+  control_period: 0.10
+  max_linear_velocity: 0.26
+  max_angular_velocity: 1.82
+  max_episode_steps: 600
+  progress_scale: 1.0
+  terminal_reward: 100.0
+  step_penalty: -0.01
+  angular_penalty: 0.01
+  # Not numerically specified in the manuscript; keep explicit for sensitivity analysis.
+  stagnation_window: 20
+  stagnation_epsilon: 0.001
+  stagnation_penalty: -0.02
+  randomize_start_goal: true
+  randomize_obstacles: true
+  randomized_map_width: 26
+  randomized_map_height: 16
+  randomized_obstacle_segments: 8
+  randomized_cell_size: 0.25
+  allow_reverse: false
+  pybullet_gui: false
+  robot_urdf: null
+  left_wheel_joints: []
+  right_wheel_joints: []
+  wheel_radius: 0.033
+  axle_length: 0.160
+  physics_substeps: 24
+  lidar_height: 0.18
+  robot_base_height: 0.02
+  lateral_friction: 0.8
+  solver_iterations: 50
+model:
+  encoder: pidm
+  hidden_size: 512
+  actor_hidden_size: 512
+  memory_mode: pidm
+  use_delta: true
+  fusion_mode: attention
+  memory_bound: 1.0
+  gate_temperature: 1.0
+  twin_critic: true
+  auxiliary_heads: true
+  enable_l_head: true
+  enable_g_head: true
+ppo:
+  learning_rate: 0.00025
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_coef: 0.20
+  update_epochs: 8
+  rollout_steps: 4096
+  minibatch_size: 256
+  sequence_length: 128
+  value_coef: 0.5
+  entropy_coef: 0.01
+  auxiliary_coef: 0.1
+  l_weight: 1.0
+  g_weight: 0.5
+  failure_tail_steps: 20
+  max_grad_norm: 0.5
+  normalize_advantage: true
+  normalize_g_target: true
+evaluation:
+  episodes_per_map: 100
+  maps: [map1, map2, map3, map4]
+  bootstrap_samples: 10000
+  confidence_level: 0.95
+  checkpoint_rule: final
+  scenario_manifest: configs/scenarios.json
+logging:
+  log_interval: 4096
+  save_interval: 50000
+  record_diagnostics: false
+  write_csv: true

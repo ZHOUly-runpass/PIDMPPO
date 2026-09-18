@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "coordinate_unit": "metre",
+  "cell_size": 0.5,
+  "provenance": "Fixed U-shaped mechanism case created for the revision analysis.",
+  "scenarios": [
+    {
+      "id": "u_trap_escape",
+      "map": "mechanism_u",
+      "map_file": "configs/maps/mechanism_u.txt",
+      "start": [6.25, 6.25],
+      "goal": [6.25, 10.25],
+      "theta": 1.5707963267948966,
+      "difficulty": "hard",
+      "trap_region": [4.25, 3.75, 8.25, 8.25]
+    }
+  ]
+}

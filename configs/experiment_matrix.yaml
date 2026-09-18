@@ -1,0 +1,54 @@
+base_config: configs/paper.yaml
+output_root: runs/revision
+seeds: [11, 22, 33, 44, 55]
+core_variants:
+  - pidmppo
+  - lstm_ppo
+  - gru_ppo
+  - lstm_auxiliary
+  - lstm_dual_value
+  - matched_lstm
+  - matched_gru
+  - without_d
+  - without_attention
+  - without_auxiliary
+  - l_loss_only
+  - g_loss_only
+  - single_critic
+sensitivity:
+  - name: memory_bound_low
+    variant: pidmppo
+    overrides: [model.memory_bound=0.5]
+  - name: memory_bound_high
+    variant: pidmppo
+    overrides: [model.memory_bound=2.0]
+  - name: gate_temperature_low
+    variant: pidmppo
+    overrides: [model.gate_temperature=0.5]
+  - name: gate_temperature_high
+    variant: pidmppo
+    overrides: [model.gate_temperature=2.0]
+  - name: auxiliary_weight_low
+    variant: pidmppo
+    overrides: [ppo.auxiliary_coef=0.05]
+  - name: auxiliary_weight_high
+    variant: pidmppo
+    overrides: [ppo.auxiliary_coef=0.2]
+  - name: stagnation_window_short
+    variant: pidmppo
+    overrides: [env.stagnation_window=10]
+  - name: stagnation_window_long
+    variant: pidmppo
+    overrides: [env.stagnation_window=40]
+  - name: stagnation_epsilon_low
+    variant: pidmppo
+    overrides: [env.stagnation_epsilon=0.0005]
+  - name: stagnation_epsilon_high
+    variant: pidmppo
+    overrides: [env.stagnation_epsilon=0.002]
+  - name: stagnation_penalty_low
+    variant: pidmppo
+    overrides: [env.stagnation_penalty=-0.01]
+  - name: stagnation_penalty_high
+    variant: pidmppo
+    overrides: [env.stagnation_penalty=-0.05]

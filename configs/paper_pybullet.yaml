@@ -1,0 +1,39 @@
+seed: 42
+device: auto
+total_timesteps: 1500000
+
+env:
+  backend: pybullet
+  map_name: map1
+  lidar_beams: 64
+  lidar_min_range: 0.12
+  lidar_max_range: 3.5
+  action_history: 9
+  goal_radius: 0.20
+  collision_distance: 0.13
+  robot_radius: 0.105
+  control_period: 0.10
+  max_linear_velocity: 0.26
+  max_angular_velocity: 1.82
+  max_episode_steps: 600
+  progress_scale: 1.0
+  terminal_reward: 100.0
+  step_penalty: -0.01
+  angular_penalty: 0.01
+  stagnation_window: 20
+  stagnation_epsilon: 0.001
+  stagnation_penalty: -0.02
+  randomize_start_goal: false
+  randomize_obstacles: false
+  allow_reverse: false
+  pybullet_gui: false
+  robot_urdf: bundled:turtlebot3_burger_sim.urdf
+  left_wheel_joints: [0]
+  right_wheel_joints: [1]
+  wheel_radius: 0.033
+  axle_length: 0.160
+  physics_substeps: 24
+  lidar_height: 0.18
+  robot_base_height: 0.0
+  lateral_friction: 0.8
+  solver_iterations: 50
