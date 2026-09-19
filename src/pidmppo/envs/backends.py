@@ -54,8 +54,17 @@ class GridBackend:
 
     def _circle_collision(self, x: float, y: float) -> bool:
         r = self.robot_radius
-        offsets = ((0.0, 0.0), (r, 0.0), (-r, 0.0), (0.0, r), (0.0, -r))
-        return any(self.map.is_occupied(x + dx, y + dy) for dx, dy in offsets)
+        if min(x, y, self.map.width - x, self.map.height - y) <= r:
+            return True
+        size = self.map.cell_size
+        for row in range(int((y - r) // size), int((y + r) // size) + 1):
+            for col in range(int((x - r) // size), int((x + r) // size) + 1):
+                if self.map.occupied[row, col]:
+                    dx = max(col * size - x, 0., x - (col + 1) * size)
+                    dy = max(row * size - y, 0., y - (row + 1) * size)
+                    if dx * dx + dy * dy <= r * r:
+                        return True
+        return False
 
     def lidar(self, beams: int, minimum: float, maximum: float) -> np.ndarray:
         angles = self._pose[2] + np.linspace(-np.pi, np.pi, beams, endpoint=False)

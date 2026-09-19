@@ -36,6 +36,8 @@ class EnvConfig:
     randomized_map_height: int = 16
     randomized_obstacle_segments: int = 8
     randomized_cell_size: float = 0.25
+    spawn_clearance: float = 0.15
+    curriculum: bool = False
     allow_reverse: bool = False
     pybullet_gui: bool = False
     robot_urdf: str | None = None
@@ -68,6 +70,10 @@ class ModelConfig:
     auxiliary_heads: bool = True
     enable_l_head: bool = True
     enable_g_head: bool = True
+    actor_mean_gain: float | None = None
+    log_std_init: float | None = None
+    log_std_min: float = -5.0
+    log_std_max: float = 2.0
 
 
 @dataclass
@@ -89,6 +95,9 @@ class PPOConfig:
     max_grad_norm: float = 0.5
     normalize_advantage: bool = True
     normalize_g_target: bool = True
+    target_kl: float | None = None
+    value_clip_coef: float | None = None  # None preserves the original clip_coef.
+    gradient_diagnostics_interval: int = 10
 
 
 @dataclass
@@ -136,6 +145,18 @@ class ExperimentConfig:
             raise ValueError("memory_bound must be positive")
         if self.model.gate_temperature <= 0.0:
             raise ValueError("gate_temperature must be positive")
+        if self.model.log_std_min >= self.model.log_std_max:
+            raise ValueError("log_std_min must be smaller than log_std_max")
+        if self.model.actor_mean_gain is not None and self.model.actor_mean_gain <= 0:
+            raise ValueError("actor_mean_gain must be positive")
+        if self.ppo.target_kl is not None and self.ppo.target_kl <= 0:
+            raise ValueError("target_kl must be positive")
+        if self.ppo.gradient_diagnostics_interval < 1:
+            raise ValueError("gradient_diagnostics_interval must be positive")
+        if self.ppo.value_clip_coef is not None and self.ppo.value_clip_coef <= 0:
+            raise ValueError("value_clip_coef must be positive")
+        if self.env.spawn_clearance < max(self.env.robot_radius, self.env.collision_distance):
+            raise ValueError("spawn_clearance must cover the robot radius and collision threshold")
         if self.env.backend not in {"grid", "pybullet"}:
             raise ValueError(f"Unsupported environment backend: {self.env.backend}")
         if bool(self.env.left_wheel_joints) != bool(self.env.right_wheel_joints):
@@ -171,6 +192,11 @@ def _construct(cls: type[T], values: dict[str, Any]) -> T:
 def load_config(path: str | Path) -> ExperimentConfig:
     with Path(path).open("r", encoding="utf-8") as stream:
         raw = yaml.safe_load(stream) or {}
+    return config_from_dict(raw)
+
+
+def config_from_dict(raw: dict[str, Any]) -> ExperimentConfig:
+    """Load saved checkpoint configuration, supplying new backward-compatible defaults."""
     if not isinstance(raw, dict):
         raise ValueError("Configuration root must be a mapping")
     top_level = {item.name for item in fields(ExperimentConfig)}

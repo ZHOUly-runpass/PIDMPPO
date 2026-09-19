@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 from importlib.resources import files
 import json
 import math
@@ -122,6 +123,7 @@ def _point_segment_distance(
     return float(np.hypot(x - (x1 + projection * dx), y - (y1 + projection * dy)))
 
 
+@lru_cache(maxsize=4)
 def _load_paper_map(name: str) -> GridMap:
     resource = files("pidmppo").joinpath("assets/maps/paper_maps.json")
     raw = json.loads(resource.read_text(encoding="utf-8"))
@@ -168,6 +170,10 @@ def _load_paper_map(name: str) -> GridMap:
 def load_map(name: str, cell_size: float = 0.50, map_file: str | Path | None = None) -> GridMap:
     if map_file is not None:
         path = Path(map_file)
+        if path.suffix == ".json":
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            return GridMap(np.asarray(raw["occupied"], dtype=bool), tuple(map(tuple, raw["starts"])),
+                           tuple(map(tuple, raw["goals"])), float(raw["cell_size"]), source=raw.get("source", "v2_asset"))
         lines = tuple(line.rstrip("\n\r") for line in path.read_text(encoding="utf-8").splitlines())
         lines = tuple(line for line in lines if line)
         return _parse_lines(lines, str(path), cell_size)

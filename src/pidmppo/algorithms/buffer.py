@@ -13,6 +13,7 @@ from .auxiliary import build_l_targets
 class SequenceBatch:
     observations: torch.Tensor
     actions: torch.Tensor
+    raw_actions: torch.Tensor
     old_log_probs: torch.Tensor
     old_value1: torch.Tensor
     old_value2: torch.Tensor
@@ -31,9 +32,13 @@ class RolloutBuffer:
         self.capacity = capacity
         self.observations = np.zeros((capacity, observation_dim), dtype=np.float32)
         self.actions = np.zeros((capacity, action_dim), dtype=np.float32)
+        self.raw_actions = np.zeros((capacity, action_dim), dtype=np.float32)
         self.log_probs = np.zeros(capacity, dtype=np.float32)
         self.rewards = np.zeros(capacity, dtype=np.float32)
         self.dones = np.zeros(capacity, dtype=bool)
+        self.terminated = np.zeros(capacity, dtype=bool)
+        self.truncated = np.zeros(capacity, dtype=bool)
+        self.timeout_values = np.zeros(capacity, dtype=np.float32)
         self.successes = np.zeros(capacity, dtype=bool)
         self.episode_starts = np.zeros(capacity, dtype=np.float32)
         self.value1 = np.zeros(capacity, dtype=np.float32)
@@ -63,15 +68,28 @@ class RolloutBuffer:
         value1: float,
         value2: float,
         state: RecurrentState,
+        *,
+        raw_action: np.ndarray | None = None,
+        terminated: bool | None = None,
+        truncated: bool = False,
+        timeout_value: float = 0.0,
     ) -> None:
         if self.full:
             raise RuntimeError("RolloutBuffer is full")
         index = self.position
         self.observations[index] = observation
         self.actions[index] = action
+        if raw_action is None:
+            raise ValueError("Rollouts must store raw_action; saturated actions cannot be inverted")
+        self.raw_actions[index] = raw_action
         self.log_probs[index] = log_prob
         self.rewards[index] = reward
         self.dones[index] = done
+        self.terminated[index] = done if terminated is None else terminated
+        self.truncated[index] = truncated
+        if done != bool(self.terminated[index] or truncated):
+            raise ValueError("done must equal terminated or truncated")
+        self.timeout_values[index] = timeout_value
         self.successes[index] = success
         self.episode_starts[index] = float(episode_start)
         self.value1[index] = value1
@@ -101,9 +119,12 @@ class RolloutBuffer:
                 next_value = last_value
             else:
                 next_value = conservative_values[index + 1]
-            nonterminal = 1.0 - float(self.dones[index])
-            delta = self.rewards[index] + gamma * next_value * nonterminal - conservative_values[index]
-            last_advantage = delta + gamma * gae_lambda * nonterminal * last_advantage
+            if self.truncated[index] and not self.terminated[index]:
+                next_value = self.timeout_values[index]
+            bootstrap = 1.0 - float(self.terminated[index])
+            continuation = 1.0 - float(self.dones[index])
+            delta = self.rewards[index] + gamma * next_value * bootstrap - conservative_values[index]
+            last_advantage = delta + gamma * gae_lambda * continuation * last_advantage
             self.advantages[index] = last_advantage
         self.returns = self.advantages + conservative_values
         self.l_targets, self.l_mask = build_l_targets(
@@ -163,6 +184,7 @@ class RolloutBuffer:
         return SequenceBatch(
             observations=tensor(padded(self.observations)),
             actions=tensor(padded(self.actions)),
+            raw_actions=tensor(padded(self.raw_actions)),
             old_log_probs=tensor(padded(self.log_probs)),
             old_value1=tensor(padded(self.value1)),
             old_value2=tensor(padded(self.value2)),
@@ -175,4 +197,3 @@ class RolloutBuffer:
             episode_starts=tensor(padded(self.episode_starts)),
             initial_state=RecurrentState(tensor(first), tensor(second)),
         )
-

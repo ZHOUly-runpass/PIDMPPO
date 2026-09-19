@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+import hashlib
 from copy import deepcopy
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -25,6 +26,8 @@ class Scenario:
     difficulty: str = "unclassified"
     map_file: str | None = None
     trap_region: tuple[float, float, float, float] | None = None
+    version: int = 1
+    reference_path_length: float = 0.0
 
 
 @dataclass
@@ -43,14 +46,46 @@ class EpisodeResult:
     episode_return: float
     path_length: float
     elapsed_seconds: float
+    reference_path_length: float = 0.0
+    path_efficiency: float = 0.0
+    spin_fraction: float = 0.0
+    stagnation_fraction: float = 0.0
+    scenario_version: int = 1
 
 
 def load_scenarios(path: str | Path) -> list[Scenario]:
-    raw = json.loads(Path(path).read_text(encoding="utf-8"))
-    if raw.get("version") != 1:
+    path = Path(path)
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    version = raw.get("version")
+    if version not in {1, 2}:
         raise ValueError("Unsupported scenario manifest version")
+    if version == 2:
+        expected = path.with_suffix(".sha256").read_text(encoding="utf-8").strip()
+        if hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+            raise ValueError("Scenario manifest SHA256 mismatch")
     scenarios = []
+    tasks = set()
+    grid_hashes = {}
     for item in raw["scenarios"]:
+        map_file = item.get("map_file")
+        if version == 2:
+            if map_file is not None:
+                map_path = (path.parent / map_file).resolve()
+                if hashlib.sha256(map_path.read_bytes()).hexdigest() != item["map_sha256"]:
+                    raise ValueError(f"Map SHA256 mismatch: {map_path}")
+                map_file = str(map_path)
+            else:
+                from ..envs.maps import load_map
+                if item["map"] not in grid_hashes:
+                    grid = load_map(item["map"])
+                    payload = {"occupied": grid.occupied.astype(int).tolist(), "cell_size": grid.cell_size}
+                    grid_hashes[item["map"]] = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+                if item["grid_sha256"] != grid_hashes[item["map"]]:
+                    raise ValueError("Fixed map geometry differs from accepted geometry")
+            key = (map_file or item["map"], tuple(item["start"]), tuple(item["goal"]))
+            if key in tasks:
+                raise ValueError("Repeated start/goal task in version 2 manifest")
+            tasks.add(key)
         scenarios.append(
             Scenario(
                 id=item["id"],
@@ -59,8 +94,10 @@ def load_scenarios(path: str | Path) -> list[Scenario]:
                 goal=tuple(item["goal"]),
                 theta=float(item["theta"]),
                 difficulty=item.get("difficulty", "unclassified"),
-                map_file=item.get("map_file"),
+                map_file=map_file,
                 trap_region=tuple(item["trap_region"]) if item.get("trap_region") else None,
+                version=version,
+                reference_path_length=float(item.get("reference_path_length", 0.0)),
             )
         )
     if len({scenario.id for scenario in scenarios}) != len(scenarios):
@@ -75,7 +112,7 @@ def evaluate_policy(
     *,
     method: str,
     training_seed: int,
-    episodes_per_map: int,
+    episodes_per_map: int | None,
     evaluation_seed: int,
     device: torch.device,
     trace_episodes: int = 0,
@@ -96,8 +133,15 @@ def evaluate_policy(
         env_config.randomize_obstacles = False
         env = MaplessNavigationEnv(env_config)
         try:
-            for episode_index in range(episodes_per_map):
+            count = episodes_per_map or len(map_scenarios)
+            if any(s.version == 2 for s in map_scenarios) and count > len(map_scenarios):
+                raise ValueError("Version 2 evaluation forbids duplicated deterministic episodes")
+            for episode_index in range(count):
                 scenario = map_scenarios[episode_index % len(map_scenarios)]
+                if env_config.map_file != scenario.map_file:
+                    env.close()
+                    env_config.map_file = scenario.map_file
+                    env = MaplessNavigationEnv(env_config)
                 seed = evaluation_seed + episode_index
                 observation, _ = env.reset(
                     seed=seed,
@@ -107,6 +151,7 @@ def evaluate_policy(
                 previous_pose = env.pose
                 path_length = 0.0
                 episode_return = 0.0
+                spins = stagnations = 0
                 episode_id = f"{training_seed}:{scenario.id}:{episode_index}"
                 should_trace = traced < trace_episodes
                 final_info = {"success": False, "collision": False}
@@ -119,13 +164,17 @@ def evaluate_policy(
                             torch.tensor([[step == 0]], device=device),
                         )
                         action = torch.tanh(output.mean)
-                        _, entropy = model.evaluate_action(output.mean, output.log_std, action)
+                        if should_trace:
+                            _, entropy = model.evaluate_action(output.mean, output.log_std, action, raw_action=output.mean)
                     numpy_action = action[0, 0].cpu().numpy()
                     observation, reward, terminated, truncated, final_info = env.step(numpy_action)
                     current_pose = env.pose
                     path_length += float(np.linalg.norm(current_pose[:2] - previous_pose[:2]))
                     previous_pose = current_pose
                     episode_return += reward
+                    velocity = final_info.get("executed_velocity", [0., 0.])
+                    spins += int(abs(velocity[0]) < .03 and abs(velocity[1]) > 1.)
+                    stagnations += int(final_info.get("reward_terms", {}).get("stagnation", 0.) < 0)
                     if should_trace:
                         recorder.append(
                             episode_id=episode_id,
@@ -168,6 +217,11 @@ def evaluate_policy(
                         episode_return=episode_return,
                         path_length=path_length,
                         elapsed_seconds=(step + 1) * env_config.control_period,
+                        reference_path_length=scenario.reference_path_length,
+                        path_efficiency=(min(1., scenario.reference_path_length / max(path_length, 1e-9)) if final_info.get("success") else 0.),
+                        spin_fraction=spins / (step + 1),
+                        stagnation_fraction=stagnations / (step + 1),
+                        scenario_version=scenario.version,
                     )
                 )
         finally:

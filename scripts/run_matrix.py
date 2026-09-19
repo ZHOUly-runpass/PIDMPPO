@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import shlex
 import subprocess
 import sys
@@ -27,6 +28,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--stage", choices=("core", "sensitivity", "all"), default="core")
     parser.add_argument("--execute", action="store_true", help="Actually launch jobs sequentially")
     parser.add_argument("--steps", type=int)
+    parser.add_argument("--max-jobs", type=int, help="Required execution bound; no OS process suspension")
+    parser.add_argument("--status", type=Path, default=Path("artifacts/matrix_status.json"))
     return parser.parse_args()
 
 
@@ -78,14 +81,43 @@ def command_for(job: Job, base_config: Path, steps: int | None) -> list[str]:
 def main() -> None:
     args = parse_args()
     base_config, jobs = load_jobs(args.matrix, args.stage)
+    if args.max_jobs is not None:
+        if args.max_jobs < 1:
+            raise ValueError("max-jobs must be positive")
+        jobs = jobs[:args.max_jobs]
+    if args.execute and args.max_jobs is None:
+        raise ValueError("Execution requires an explicit --max-jobs limit")
+    if args.execute and args.status.exists():
+        raise FileExistsError(f"Choose a new status file: {args.status}")
+    status = {"status": "running", "job_limit": args.max_jobs, "jobs": []}
+    def write_status():
+        args.status.parent.mkdir(parents=True, exist_ok=True)
+        temporary = args.status.with_suffix(".tmp")
+        temporary.write_text(json.dumps(status, indent=2), encoding="utf-8")
+        temporary.replace(args.status)
     print(f"jobs={len(jobs)} execute={args.execute}")
     for index, job in enumerate(jobs, start=1):
         command = command_for(job, base_config, args.steps)
         print(f"[{index}/{len(jobs)}] {shlex.join(command)}")
         if args.execute:
-            subprocess.run(command, check=True)
+            record = {"variant": job.variant, "seed": job.seed, "status": "running"}
+            status["jobs"].append(record)
+            write_status()
+            try:
+                subprocess.run(command, check=True)
+                train_status = json.loads((job.output / "train_status.json").read_text(encoding="utf-8"))
+                if train_status["status"] != "completed":
+                    raise RuntimeError("Child training stopped before completion; queue will not advance")
+                record["status"] = "completed"
+            except BaseException:
+                record["status"] = status["status"] = "failed_or_interrupted"
+                write_status()
+                raise
+            write_status()
+    if args.execute:
+        status["status"] = "completed_job_limit"
+        write_status()
 
 
 if __name__ == "__main__":
     main()
-

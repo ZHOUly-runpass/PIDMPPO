@@ -9,6 +9,7 @@ import numpy as np
 from ..config import EnvConfig
 from .backends import NavigationBackend, create_backend
 from .maps import GridMap, generate_corridor_map, load_map
+from .geometry import ClearanceSpace
 
 
 def _wrap_angle(angle: float) -> float:
@@ -51,6 +52,19 @@ class MaplessNavigationEnv(gym.Env[np.ndarray, np.ndarray]):
         self._progress = deque(maxlen=self.config.stagnation_window)
         self._step_count = 0
         self._previous_distance = 0.0
+        self._space = ClearanceSpace(self.map, self.config.spawn_clearance)
+        self.training_step = 0
+
+    def set_training_step(self, step: int) -> None:
+        """Curriculum changes take effect only at the next episode reset."""
+        self.training_step = int(step)
+
+    def curriculum_parameters(self) -> tuple[int, float, float]:
+        if self.config.curriculum and self.training_step < 50_000:
+            return 2, 1.0, 2.5
+        if self.config.curriculum and self.training_step < 100_000:
+            return 4, 2.0, 4.0
+        return self.config.randomized_obstacle_segments, max(1.5, .35 * self.map.diagonal), float("inf")
 
     @property
     def pose(self) -> np.ndarray:
@@ -65,21 +79,34 @@ class MaplessNavigationEnv(gym.Env[np.ndarray, np.ndarray]):
     ) -> tuple[np.ndarray, dict[str, Any]]:
         super().reset(seed=seed)
         options = options or {}
-        if (
+        randomized_map = (
             self.config.randomize_obstacles
             and self.config.map_name == "map1"
             and self.config.map_file is None
-        ):
-            map_seed = int(self.np_random.integers(0, np.iinfo(np.int32).max))
-            self.map = generate_corridor_map(
-                width=self.config.randomized_map_width,
-                height=self.config.randomized_map_height,
-                obstacle_segments=self.config.randomized_obstacle_segments,
-                seed=map_seed,
-                cell_size=self.config.randomized_cell_size,
-            )
-            self.backend.update_map(self.map)
-        start, goal = self._choose_start_goal(options)
+        )
+        for attempt in range(100):
+            if randomized_map:
+                map_seed = int(self.np_random.integers(0, np.iinfo(np.int32).max))
+                self.map = generate_corridor_map(
+                    width=self.config.randomized_map_width,
+                    height=self.config.randomized_map_height,
+                    obstacle_segments=self.curriculum_parameters()[0],
+                    seed=map_seed,
+                    cell_size=self.config.randomized_cell_size,
+                )
+                self.backend.update_map(self.map)
+                self._space = ClearanceSpace(self.map, self.config.spawn_clearance)
+            try:
+                start, goal = self._choose_start_goal(options)
+                break
+            except ValueError:
+                # Explicit requests are never silently repaired. Random geometry
+                # can be cell-connected yet lose wide enough long paths after
+                # inflation; discard that map and sample another from the RNG.
+                if not randomized_map or not self.config.randomize_start_goal or "start" in options or "goal" in options:
+                    raise
+        else:
+            raise RuntimeError("No clearance-valid randomized task after 100 maps")
         theta = float(options.get("theta", self.np_random.uniform(-np.pi, np.pi)))
         self.backend.reset(start, theta)
         self._goal[:] = goal
@@ -92,25 +119,34 @@ class MaplessNavigationEnv(gym.Env[np.ndarray, np.ndarray]):
         return observation, self._info(success=False, collision=False)
 
     def _choose_start_goal(self, options: dict[str, Any]) -> tuple[np.ndarray, np.ndarray]:
+        if ("start" in options) != ("goal" in options):
+            raise ValueError("start and goal must be supplied together")
         if "start" in options and "goal" in options:
             start = np.asarray(options["start"], dtype=np.float32)
             goal = np.asarray(options["goal"], dtype=np.float32)
             if start.shape != (2,) or goal.shape != (2,):
                 raise ValueError("start and goal must each contain two coordinates")
-            if self.map.is_occupied(float(start[0]), float(start[1])):
-                raise ValueError("start lies inside an obstacle or outside the map")
-            if self.map.is_occupied(float(goal[0]), float(goal[1])):
-                raise ValueError("goal lies inside an obstacle or outside the map")
+            if not self._space.is_valid(start) or not self._space.is_valid(goal):
+                raise ValueError("start/goal violates robot, collision-threshold or spawn clearance")
+            if not self._space.connected(start, goal):
+                raise ValueError("start and goal are disconnected in robot-clearance free space")
+            self._space.path(start, goal)
             return start, goal
         if self.config.randomize_start_goal:
-            free = self.map.free_centers()
-            minimum = max(1.5, 0.35 * self.map.diagonal)
-            for _ in range(100):
+            free = self._space.centres
+            _, minimum, maximum = self.curriculum_parameters()
+            for _ in range(2000):
+                if len(free) < 2:
+                    break
                 indices = self.np_random.choice(len(free), size=2, replace=False)
                 start, goal = free[indices]
-                if float(np.linalg.norm(goal - start)) >= minimum:
+                if minimum <= float(np.linalg.norm(goal - start)) <= maximum and self._space.connected(start, goal):
                     return start.copy(), goal.copy()
-        return np.asarray(self.map.starts[0], dtype=np.float32), np.asarray(self.map.goals[0], dtype=np.float32)
+            raise ValueError("Cannot sample a connected start/goal with the required clearance and distance")
+        start, goal = np.asarray(self.map.starts[0], dtype=np.float32), np.asarray(self.map.goals[0], dtype=np.float32)
+        if not self._space.connected(start, goal):
+            raise ValueError("Default map endpoints violate clearance/connectivity; supply valid scenarios")
+        return start, goal
 
     def step(self, action: np.ndarray) -> tuple[np.ndarray, float, bool, bool, dict[str, Any]]:
         normalized_action = np.clip(np.asarray(action, dtype=np.float32), -1.0, 1.0)

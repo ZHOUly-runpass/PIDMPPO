@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import platform
 import subprocess
 from datetime import datetime, timezone
@@ -28,6 +29,8 @@ def build_run_manifest(config: ExperimentConfig, variant: str) -> dict:
             "gymnasium": gymnasium.__version__,
         },
         "git_commit": _git_commit(),
+        "source_fingerprint": source_fingerprint(),
+        "implementation_version": "correctness-v2",
     }
 
 
@@ -52,3 +55,15 @@ def _git_commit() -> str | None:
         return result.stdout.strip()
     except (OSError, subprocess.SubprocessError):
         return None
+
+
+def source_fingerprint() -> str:
+    """Hash implementation/tests and optimization protocol, not output artifacts."""
+    root = Path(__file__).resolve().parents[3]
+    paths = [path for folder in ("src", "scripts", "tests") for path in (root / folder).rglob("*.py")]
+    paths += [root / "configs/paper.yaml", root / "configs/optimization_v2.yaml"]
+    digest = hashlib.sha256()
+    for path in sorted(paths):
+        digest.update(path.relative_to(root).as_posix().encode())
+        digest.update(path.read_bytes().replace(b"\r\n", b"\n"))
+    return digest.hexdigest()

@@ -12,8 +12,8 @@ import yaml
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Evaluate checkpoints on the fixed randomized-map suite")
     parser.add_argument("--matrix", type=Path, default=Path("configs/experiment_matrix.yaml"))
-    parser.add_argument("--scenarios", type=Path, default=Path("generated_maps/scenarios.json"))
-    parser.add_argument("--output", type=Path, default=Path("evaluation/generalization"))
+    parser.add_argument("--scenarios", type=Path, default=Path("configs/scenarios_v2/random.json"))
+    parser.add_argument("--output", type=Path, default=Path("evaluation/generalization_v2"))
     parser.add_argument("--variants", nargs="+")
     parser.add_argument("--generate", action="store_true")
     parser.add_argument("--execute", action="store_true")
@@ -24,7 +24,7 @@ def main() -> None:
     args = parse_args()
     raw = yaml.safe_load(args.matrix.read_text(encoding="utf-8"))
     if args.generate:
-        subprocess.run([sys.executable, "scripts/generate_random_maps.py"], check=True)
+        subprocess.run([sys.executable, "scripts/generate_scenarios_v2.py", "--suite", "random", "--output", str(args.scenarios.parent)], check=True)
     if not args.scenarios.exists():
         raise FileNotFoundError(
             f"Missing {args.scenarios}; run with --generate before scheduling evaluation"
@@ -42,7 +42,6 @@ def main() -> None:
                 sys.executable,
                 "scripts/evaluate.py",
                 str(checkpoint),
-                "--config", str(raw["base_config"]),
                 "--variant", variant,
                 "--scenarios", str(args.scenarios),
                 "--episodes-per-map", "1",

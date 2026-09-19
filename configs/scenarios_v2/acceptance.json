@@ -1,0 +1,14 @@
+{
+  "all_connected": true,
+  "all_zero_action_passed": true,
+  "manifests": {
+    "fixed.json": "0d2ab29d54660f4f5c205c8336d75ce8737eb146851c80b5cebc3d13881fa7d6",
+    "random.json": "8ce0ef965b95d13e9e08ff97fa7013adfd6517de1d2c314f6ffd17e504332c8d",
+    "validation.json": "5fd39068d9d1f64929d80caf31546aaaf063b0e09e52bd8d6aef05035f145456"
+  },
+  "max_reference_steps": 371,
+  "minimum_clearance": 0.15,
+  "scenes": 560,
+  "status": "passed",
+  "version": 2
+}

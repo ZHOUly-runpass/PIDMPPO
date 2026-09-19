@@ -7,7 +7,7 @@ from pidmppo.envs.maps import MAPS, generate_corridor_map, generate_random_map, 
 
 
 def test_observation_is_policy_only_and_has_action_history():
-    env = MaplessNavigationEnv(EnvConfig(randomize_start_goal=False))
+    env = MaplessNavigationEnv(EnvConfig(randomize_start_goal=False, randomize_obstacles=False))
     observation, info = env.reset(seed=7)
     assert observation.shape == (85,)
     assert np.all(observation >= -1.0) and np.all(observation <= 1.0)
@@ -48,7 +48,7 @@ def test_randomized_training_corridors_are_seed_reproducible():
 
 
 def test_forward_only_action_mapping_has_zero_speed_at_minus_one():
-    env = MaplessNavigationEnv(EnvConfig(randomize_start_goal=False, allow_reverse=False))
+    env = MaplessNavigationEnv(EnvConfig(randomize_start_goal=False, randomize_obstacles=False, allow_reverse=False))
     env.reset(seed=3, options={"theta": 0.0})
     before = env.pose
     env.step(np.asarray([-1.0, 0.0], dtype=np.float32))

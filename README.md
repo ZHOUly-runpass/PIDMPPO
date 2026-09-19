@@ -78,7 +78,7 @@ python scripts/evaluate_matrix.py
 
 正式矩阵为 13 个核心训练设置 × 5 seeds = 65 个任务，另有 12 个敏感性设置 × 5 seeds = 60 个任务。首次运行前应先使用 `configs/smoke_matrix.yaml` 做单种子短程验证。
 
-只有显式增加 `--execute` 才会启动训练或评测；运行前应先确认输出目录、计算预算和冻结版本。
+只有显式增加 `--execute` 才会启动训练或评测；通用训练矩阵还必须明确 `--max-jobs`。运行前应先确认输出目录、计算预算和冻结版本，不使用暂停父进程控制队列。
 
 机制场景与随机地图评测：
 
@@ -92,10 +92,20 @@ python scripts/evaluate_generalization_matrix.py
 
 ## 固定评测协议
 
-`configs/scenarios.json` 含每张地图 25 个固定 start-goal，共 100 个场景。地图改变后可重新生成：
+旧 `configs/scenarios.json` 的 25/图场景仅保留用于追溯，不再作为新训练正式评测集。
+
+当前采用 `configs/scenarios_v2/`：固定地图每图 100 个独立任务、训练分布验证 100 个任务、随机 zero-shot 60 张地图，全部经过 0.15 m 净空、零动作和 ≤540-step 参考控制器验收。场景及几何有 SHA256，新评测禁止重复扩充样本。
+
+## Correctness-v2 限时优化
+
+动作概率、squashed entropy、超时 bootstrap、净空采样和完整训练诊断已接入。保留 PIDM、双价值头和 L/G；旧 checkpoint 保持可推理，新训练从头写入独立目录。
+
+[实施协议与命令](docs/OPTIMIZATION_V2.md) 包含 A–D 筛选、三种子确认、24 小时/11 任务上限和自动 HOLD 条件。
 
 ```powershell
-python scripts/generate_scenarios.py --output configs/scenarios.json
+python scripts/run_preflight_v2.py
+python scripts/run_optimization.py              # 只打印计划
+python scripts/run_optimization.py --execute    # 预检通过后执行，绝不恢复原 65 任务
 ```
 
 正式评测只使用固定 checkpoint，不挑选最佳 seed；`episodes.csv` 是汇总程序的唯一结果输入。

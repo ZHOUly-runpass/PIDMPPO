@@ -1,0 +1,35 @@
+version: correctness-v2
+base_config: configs/paper.yaml
+assets: configs/scenarios_v2
+legacy_root: runs/revision/pidmppo
+legacy_seeds: [11, 22, 33, 44, 55]
+screen_seed: 11
+screen_steps: 300000
+confirmation_seeds: [11, 22, 33]
+confirmation_steps: 500000
+max_hours: 24
+max_train_jobs: 11
+dispatch_reserve_seconds: 900
+candidates:
+  A: []
+  B:
+    - ppo.learning_rate=0.0001
+    - ppo.update_epochs=4
+    - ppo.target_kl=0.02
+  C:
+    - ppo.learning_rate=0.0001
+    - ppo.update_epochs=4
+    - ppo.target_kl=0.02
+    - model.actor_mean_gain=0.01
+    - model.log_std_init=-0.5
+    - model.log_std_min=-5.0
+    - model.log_std_max=0.0
+  D:
+    - ppo.learning_rate=0.0001
+    - ppo.update_epochs=4
+    - ppo.target_kl=0.02
+    - model.actor_mean_gain=0.01
+    - model.log_std_init=-0.5
+    - model.log_std_min=-5.0
+    - model.log_std_max=0.0
+    - env.curriculum=true
